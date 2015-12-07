@@ -1,18 +1,34 @@
 
-# Skriv om stopifelse så att vi inte stoppar utan tar bort felaktiga rader och ger varning om man kör lokalt
-
-
-library(dplyr)
-
-if (require(rccmisc, quietly = TRUE) && !rccmisc::is.inca()) {
-    library(incavis)
-    rm(list = ls())
-    df     <- read.csv2("~/Documents/huvud_hals/atal_blanketter/data/df.csv")
-    param  <- list(start = "2009-01-01", slut = "2009-12-31")
+########################## Hjälpfunktion för position ##########################
+is.inca <- function(){
+  unname(!(Sys.info()["user"] == "christianstaf"))
 }
 
 
-# Kör hårt!
+
+########## Lokala förberedelser samt inladdning av funktioner på INCA ##########
+if (!is.inca()) {
+  library(incavis)
+  setwd("~/Documents/Github/VIS-Mall/Huvud-_och_halscancer")
+  if (!file.exists("df.rda")) {
+    df <- read.csv2("df.csv")
+    save(df, file = "df.rda")
+  } else {
+    load("df.rda")
+  }
+  param  <- list(start = "2009-01-01", 
+                 slut = "2009-12-31",
+                 KON = 0)
+} else {
+  source("D:/R-Scripts/RCC/projekt/Vården i siffror/source_vis.R")
+}
+
+
+################################ Ladda in paket ################################
+library(dplyr)
+
+
+########### Skapa en ny dataram med länsvariabel och rätt tidsperiod ###########
 df_ungrouped <-
     df %>%
     prepare_df() %>%
@@ -24,13 +40,16 @@ df_ungrouped <-
     filter(
       !is.na(CountyOidExtension),
       ledtid %in% 0:365,
-      between_param_dates(behandlingsdatum)
+      between_param_dates(behandlingsdatum),
+      if (param$KON %in% 1:2) kon_value %in% param$KON else TRUE
 )
 
+################## Skapa en ny dataram med gruppering på län ###################
 df_lan <- group_by(df_ungrouped, CountyOidExtension )
 
-summarise2 <- function(df) {
-    df %>%
+#### Skapa funktion för att beräka ut kvotvärden samt första/sista mätvärde ####
+summarise2 <- function(x) {
+    x %>%
     summarise(
       Value                 = median(ledtid, na.rm = TRUE),
       Population            = n(),
@@ -40,9 +59,9 @@ summarise2 <- function(df) {
 }
 
 
-bind_rows(summarise2(df_ungrouped), summarise2(df_lan)) %>%
-    vis()
+################# Slå samman olika dataramar med olika stratum #################
+df_all <- bind_rows(summarise2(df_ungrouped), summarise2(df_lan)) 
 
 
-# Make skript file to export to INCA
-make_r_script("./inst/test_vis.R", "incavis")
+############ Skicka in den sammanslagna dataramen i VIS-funktionen #############
+vis(df_all)
